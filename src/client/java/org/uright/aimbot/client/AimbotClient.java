@@ -15,10 +15,11 @@ import net.minecraft.util.math.Vec3d;
 public class AimbotClient implements ClientModInitializer {
 
     private static boolean enabled = false;
-    private static final boolean targetLockEnabled = true; // 改为常量，一直启用
+    private static final boolean targetLockEnabled = true;
     private static float baseSmoothFactor = 0.07f;
     private static float currentSmoothFactor = 0.01f;
     private static final float MAX_DISTANCE = 10.0f;
+    private static final float MAX_FOV = 30.0f; // FOV限制
     private static final float MIN_SMOOTH_FACTOR = 0.01f;
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
     private static final float ACCELERATION_RATE = 0.005f;
@@ -116,31 +117,31 @@ public class AimbotClient implements ClientModInitializer {
     }
 
     private Entity findTarget(ClientPlayerEntity player, MinecraftClient client) {
-        // 如果当前有锁定目标，检查锁定目标是否仍然有效
+        // 如果当前有锁定目标，检查锁定目标是否仍然有效且在FOV内
         if (lockedTarget != null) {
             if (isValidTarget(lockedTarget, player) &&
                     player.squaredDistanceTo(lockedTarget) <= MAX_DISTANCE * MAX_DISTANCE &&
                     canSeeEntity(player, lockedTarget)) {
-                return lockedTarget; // 锁定目标仍然有效，继续锁定
+                return lockedTarget;
             } else {
-                lockedTarget = null; // 锁定目标失效，清除锁定
+                lockedTarget = null;
             }
         }
 
-        // 方法1: 使用十字准星目标
+        // 方法1: 使用十字准星目标（不受FOV限制）
         HitResult hitResult = client.crosshairTarget;
         if (hitResult != null && hitResult.getType() == HitResult.Type.ENTITY) {
             Entity target = ((EntityHitResult) hitResult).getEntity();
             if (isValidTarget(target, player)) {
-                lockedTarget = target; // 锁定新目标
+                lockedTarget = target;
                 return target;
             }
         }
 
-        // 方法2: 查找视线方向最近的实体
+        // 方法2: 查找视线方向最近的实体（在FOV内）
         Entity directionalTarget = findDirectionalEntity(player, client);
         if (directionalTarget != null) {
-            lockedTarget = directionalTarget; // 锁定新目标
+            lockedTarget = directionalTarget;
             return directionalTarget;
         }
 
@@ -161,6 +162,9 @@ public class AimbotClient implements ClientModInitializer {
 
             if (!canSeeEntity(player, entity)) continue;
 
+            // 检查是否在FOV内
+            if (!isInFov(player, entity)) continue;
+
             float[] targetAngles = calculateAngles(player, entity, 1.0f);
             float targetYaw = targetAngles[0];
             float targetPitch = targetAngles[1];
@@ -176,6 +180,22 @@ public class AimbotClient implements ClientModInitializer {
         }
 
         return closest;
+    }
+
+    // 检查实体是否在FOV内
+    private boolean isInFov(ClientPlayerEntity player, Entity entity) {
+        float[] targetAngles = calculateAngles(player, entity, 1.0f);
+        float targetYaw = targetAngles[0];
+        float targetPitch = targetAngles[1];
+
+        // 计算角度差异
+        float yawDiff = Math.abs(interpolateAngle(player.getYaw(), targetYaw, 1.0f));
+        float pitchDiff = Math.abs(interpolateAngle(player.getPitch(), targetPitch, 1.0f));
+
+        // 使用欧几里得距离计算总角度差异
+        float totalAngleDiff = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+
+        return totalAngleDiff <= MAX_FOV;
     }
 
     private boolean isValidTarget(Entity entity, ClientPlayerEntity player) {
@@ -255,23 +275,24 @@ public class AimbotClient implements ClientModInitializer {
         baseSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, Math.min(MAX_SMOOTH_FACTOR, factor));
     }
 
-    // 目标锁定一直启用，不再需要切换方法
     public static boolean isTargetLockEnabled() {
         return true;
     }
 
-    // 获取当前锁定目标
     public static Entity getLockedTarget() {
         return lockedTarget;
     }
 
-    // 手动设置锁定目标
     public static void setLockedTarget(Entity target) {
         lockedTarget = target;
     }
 
-    // 手动清除锁定目标
     public static void clearLockedTarget() {
         lockedTarget = null;
+    }
+
+    // 获取FOV限制
+    public static float getMaxFov() {
+        return MAX_FOV;
     }
 }

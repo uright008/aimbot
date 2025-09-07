@@ -7,7 +7,7 @@ import org.lwjgl.glfw.GLFW;
 
 public class KeyBindings {
     public static KeyBinding TOGGLE_AIMBOT;
-    public static KeyBinding CLEAR_TARGET; // 清除目标锁定
+    public static KeyBinding CLEAR_TARGET;
 
     public static void register() {
         TOGGLE_AIMBOT = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -19,8 +19,8 @@ public class KeyBindings {
 
         CLEAR_TARGET = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.aimbot.clear_target",
-                InputUtil.Type.MOUSE, // 使用鼠标按键
-                GLFW.GLFW_MOUSE_BUTTON_5, // mouse5（通常是鼠标侧键）
+                InputUtil.Type.MOUSE,
+                GLFW.GLFW_MOUSE_BUTTON_5,
                 "category.aimbot"
         ));
     }
