@@ -86,24 +86,38 @@ public class AimbotClient implements ClientModInitializer {
             }
         }
 
-        // 方法2: 查找最近的实体
-        return findClosestEntity(player, client);
+        // 方法2: 查找视线方向最近的实体（基于角度差异）
+        return findDirectionalEntity(player, client);
     }
 
-    private Entity findClosestEntity(ClientPlayerEntity player, MinecraftClient client) {
+    private Entity findDirectionalEntity(ClientPlayerEntity player, MinecraftClient client) {
         Entity closest = null;
-        double closestDistance = Double.MAX_VALUE;
+        double closestAngleDiff = Double.MAX_VALUE;
+        float playerYaw = player.getYaw();
+        float playerPitch = player.getPitch();
 
         for (Entity entity : client.world.getEntities()) {
             if (!isValidTarget(entity, player)) continue;
 
             double distance = player.squaredDistanceTo(entity);
-            if (distance < closestDistance && distance <= AimbotClient.MAX_DISTANCE * AimbotClient.MAX_DISTANCE) {
-                // 检查视线是否被阻挡
-                if (canSeeEntity(player, entity)) {
-                    closest = entity;
-                    closestDistance = distance;
-                }
+            if (distance > MAX_DISTANCE * MAX_DISTANCE) continue;
+
+            // 检查视线是否被阻挡
+            if (!canSeeEntity(player, entity)) continue;
+
+            // 计算瞄准该实体所需的角度
+            float[] targetAngles = calculateAngles(player, entity, 1.0f);
+            float targetYaw = targetAngles[0];
+            float targetPitch = targetAngles[1];
+
+            // 计算角度差异
+            float yawDiff = Math.abs(interpolateAngle(playerYaw, targetYaw, 1.0f));
+            float pitchDiff = Math.abs(interpolateAngle(playerPitch, targetPitch, 1.0f));
+            double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+
+            if (angleDiff < closestAngleDiff) {
+                closest = entity;
+                closestAngleDiff = angleDiff;
             }
         }
 
