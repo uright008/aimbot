@@ -27,12 +27,14 @@ public class AimbotClient implements ClientModInitializer {
     
     // 添加反应时间相关常量
     private static final int TARGET_SWITCH_DELAY_TICKS = 10; // 目标切换反应时间（ticks）
-    private static final int TARGET_FOLLOW_DELAY_TICKS = 5;   // 目标跟随反应时间（ticks）
+    private static final int TARGET_FOLLOW_DELAY_TICKS = 10;   // 目标跟随反应时间（ticks）
     
     private static Entity lastTarget = null;
     private static Entity lockedTarget = null;
     private static int targetSwitchDelayCounter = 0; // 目标切换延迟计数器
     private static int targetFollowDelayCounter = 0; // 目标跟随延迟计数器
+    private static float lastTargetYaw = 0.0f; // 上次目标偏航角
+    private static float lastTargetPitch = 0.0f; // 上次目标俯仰角
 
     @Override
     public void onInitializeClient() {
@@ -59,6 +61,8 @@ public class AimbotClient implements ClientModInitializer {
                 lockedTarget = null;
                 targetSwitchDelayCounter = 0;
                 targetFollowDelayCounter = 0;
+                lastTargetYaw = 0.0f;
+                lastTargetPitch = 0.0f;
             }
         }
 
@@ -118,14 +122,30 @@ public class AimbotClient implements ClientModInitializer {
         float pitchDiff = Math.abs(interpolateAngle(player.getPitch(), targetPitch, 1.0f));
         float angleDiff = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
 
-        // 根据角度差调整平滑因子
+        // 根据角度差调整平滑因子，添加惯性效果
         if (angleDiff > 30.0f) {
-            currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE);
+            // 大角度偏差时快速增加平滑因子
+            currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE * 2);
         } else if (angleDiff > 5.0f) {
-            currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE/2);
+            // 中等角度偏差时中等速度增加平滑因子
+            currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE);
         } else {
-            currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE);
+            // 小角度偏差时缓慢减少平滑因子，增加惯性效果
+            currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE * 0.5f);
         }
+
+        // 应用惯性效果 - 基于上次移动和当前目标的差异
+        float yawInertia = Math.abs(interpolateAngle(lastTargetYaw, targetYaw, 1.0f));
+        float pitchInertia = Math.abs(interpolateAngle(lastTargetPitch, targetPitch, 1.0f));
+        
+        // 如果目标移动变化大，降低平滑因子以增加惯性
+        if (yawInertia > 10.0f || pitchInertia > 10.0f) {
+            currentSmoothFactor *= 0.8f; // 减少平滑因子增加惯性
+        }
+
+        // 保存当前角度用于下次惯性计算
+        lastTargetYaw = targetYaw;
+        lastTargetPitch = targetPitch;
 
         // 平滑插值
         float newYaw = interpolateAngle(player.getYaw(), targetYaw, currentSmoothFactor);
@@ -280,6 +300,7 @@ public class AimbotClient implements ClientModInitializer {
 
         return new float[]{yaw, pitch};
     }
+    
 
     private float interpolateAngle(float current, float target, float factor) {
         float difference = target - current;
@@ -344,4 +365,5 @@ public class AimbotClient implements ClientModInitializer {
     public static int getTargetFollowDelayCounter() {
         return targetFollowDelayCounter;
     }
+    
 }
