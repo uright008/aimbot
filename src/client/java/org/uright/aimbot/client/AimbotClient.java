@@ -15,7 +15,7 @@ import net.minecraft.util.math.Vec3d;
 public class AimbotClient implements ClientModInitializer {
 
     private static boolean enabled = false;
-    private static float smoothFactor = 0.15f;
+    private static float smoothFactor = 0.07f;
     private static final float MAX_DISTANCE = 10.0f;
     private static final float MIN_SMOOTH_FACTOR = 0.01f;
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
