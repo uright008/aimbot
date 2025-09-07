@@ -28,13 +28,22 @@ public class AimbotClient implements ClientModInitializer {
     // 添加反应时间相关常量
     private static final int TARGET_SWITCH_DELAY_TICKS = 10; // 目标切换反应时间（ticks）
     private static final int TARGET_FOLLOW_DELAY_TICKS = 10;   // 目标跟随反应时间（ticks）
+    private static final int TARGET_MOVEMENT_DELAY_TICKS = 2;   // 目标移动反应时间（ticks）约200ms
+    
+    // 纵向抖动相关常量
+    private static final float VERTICAL_JITTER_AMPLITUDE = 0.1f; // 纵向抖动幅度
+    private static final float VERTICAL_JITTER_FREQUENCY = 0.1f; // 纵向抖动频率
+    private static final float MIN_ANGLE_FOR_JITTER = 2.0f; // 应用垂直抖动的最小角度差
     
     private static Entity lastTarget = null;
     private static Entity lockedTarget = null;
     private static int targetSwitchDelayCounter = 0; // 目标切换延迟计数器
     private static int targetFollowDelayCounter = 0; // 目标跟随延迟计数器
+    private static int targetMovementDelayCounter = 0; // 目标移动延迟计数器
+    private static Vec3d lastTargetPos = null; // 上次目标位置
     private static float lastTargetYaw = 0.0f; // 上次目标偏航角
     private static float lastTargetPitch = 0.0f; // 上次目标俯仰角
+    private static int aimTicks = 0; // 瞄准时长计数器
 
     @Override
     public void onInitializeClient() {
@@ -61,8 +70,11 @@ public class AimbotClient implements ClientModInitializer {
                 lockedTarget = null;
                 targetSwitchDelayCounter = 0;
                 targetFollowDelayCounter = 0;
+                targetMovementDelayCounter = 0;
+                lastTargetPos = null;
                 lastTargetYaw = 0.0f;
                 lastTargetPitch = 0.0f;
+                aimTicks = 0;
             }
         }
 
@@ -83,6 +95,10 @@ public class AimbotClient implements ClientModInitializer {
         if (targetFollowDelayCounter > 0) {
             targetFollowDelayCounter--;
         }
+        
+        if (targetMovementDelayCounter > 0) {
+            targetMovementDelayCounter--;
+        }
     }
 
     private void onRender(net.minecraft.client.gui.DrawContext context, float tickDelta) {
@@ -96,6 +112,7 @@ public class AimbotClient implements ClientModInitializer {
         Entity target = findTarget(player, client);
         if (target == null) {
             currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE);
+            aimTicks = 0; // 重置瞄准计数器
             return;
         }
 
@@ -105,10 +122,30 @@ public class AimbotClient implements ClientModInitializer {
             targetSwitchDelayCounter = TARGET_SWITCH_DELAY_TICKS;
             currentSmoothFactor = MIN_SMOOTH_FACTOR;
             lastTarget = target;
+            lastTargetPos = target.getPos();
+            targetMovementDelayCounter = 0;
+            aimTicks = 0; // 重置瞄准计数器
+        } else {
+            // 检查目标是否移动
+            Vec3d currentTargetPos = target.getPos();
+            if (lastTargetPos != null && !lastTargetPos.equals(currentTargetPos)) {
+                // 目标移动了，重置移动延迟计数器
+                targetMovementDelayCounter = TARGET_MOVEMENT_DELAY_TICKS;
+                lastTargetPos = currentTargetPos;
+                aimTicks = 0; // 重置瞄准计数器
+            }
         }
+
+        // 增加瞄准计数器
+        aimTicks++;
 
         // 如果目标切换延迟尚未结束，则不执行瞄准
         if (targetSwitchDelayCounter > 0) {
+            return;
+        }
+        
+        // 如果目标移动延迟尚未结束，则不执行瞄准
+        if (targetMovementDelayCounter > 0) {
             return;
         }
 
@@ -121,6 +158,14 @@ public class AimbotClient implements ClientModInitializer {
         float yawDiff = Math.abs(interpolateAngle(player.getYaw(), targetYaw, 1.0f));
         float pitchDiff = Math.abs(interpolateAngle(player.getPitch(), targetPitch, 1.0f));
         float angleDiff = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+
+        // 只有当角度差足够大时才添加纵向抖动效果
+        if (angleDiff > MIN_ANGLE_FOR_JITTER) {
+            targetPitch += calculateVerticalJitter(aimTicks);
+        }
+        yawDiff = Math.abs(interpolateAngle(player.getYaw(), targetYaw, 1.0f));
+        pitchDiff = Math.abs(interpolateAngle(player.getPitch(), targetPitch, 1.0f));
+        angleDiff = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
 
         // 根据角度差调整平滑因子，添加惯性效果
         if (angleDiff > 30.0f) {
@@ -351,6 +396,18 @@ public class AimbotClient implements ClientModInitializer {
         lockedTarget = null;
     }
 
+    /**
+     * 计算纵向抖动值，创建轻微的圆弧轨迹效果
+     * @param ticks 瞄准持续的tick数
+     * @return 纵向抖动偏移值
+     */
+    private float calculateVerticalJitter(int ticks) {
+        // 使用正弦函数创建先向上后向下的圆弧轨迹
+        // 公式: amplitude * sin(frequency * ticks - π/2)
+        // 这样开始时值为负（向下），然后变为正（向上），最后回到负（向下）
+        return VERTICAL_JITTER_AMPLITUDE * (float) Math.sin(VERTICAL_JITTER_FREQUENCY * ticks - Math.PI / 2);
+    }
+
     // 获取FOV限制
     public static float getMaxFov() {
         return MAX_FOV;
@@ -364,6 +421,11 @@ public class AimbotClient implements ClientModInitializer {
     // 获取目标跟随延迟计数器
     public static int getTargetFollowDelayCounter() {
         return targetFollowDelayCounter;
+    }
+    
+    // 获取目标移动延迟计数器
+    public static int getTargetMovementDelayCounter() {
+        return targetMovementDelayCounter;
     }
     
 }
