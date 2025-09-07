@@ -15,24 +15,23 @@ import net.minecraft.util.math.Vec3d;
 public class AimbotClient implements ClientModInitializer {
 
     private static boolean enabled = false;
+    private static final boolean targetLockEnabled = true; // 改为常量，一直启用
     private static float baseSmoothFactor = 0.07f;
-    private static float currentSmoothFactor = 0.01f; // 当前使用的平滑因子
+    private static float currentSmoothFactor = 0.01f;
     private static final float MAX_DISTANCE = 10.0f;
     private static final float MIN_SMOOTH_FACTOR = 0.01f;
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
-    private static final float ACCELERATION_RATE = 0.005f; // 加速速率
-    private static final float DECELERATION_RATE = 0.02f; // 减速速率
-    private static Entity lastTarget = null; // 上一个目标
+    private static final float ACCELERATION_RATE = 0.005f;
+    private static final float DECELERATION_RATE = 0.02f;
+    private static Entity lastTarget = null;
+    private static Entity lockedTarget = null;
 
     @Override
     public void onInitializeClient() {
-        // 注册按键绑定
         KeyBindings.register();
 
-        // 注册客户端tick事件
         ClientTickEvents.END_CLIENT_TICK.register(this::onClientTick);
 
-        // 注册渲染事件 - 实现丝滑转动
         HudRenderCallback.EVENT.register((drawContext, tickCounter) -> this.onRender(drawContext, tickCounter.getTickDelta(false)));
 
         System.out.println("Smooth Aimbot mod initialized!");
@@ -46,10 +45,18 @@ public class AimbotClient implements ClientModInitializer {
                 String status = enabled ? "§a启用" : "§c禁用";
                 client.player.sendMessage(net.minecraft.text.Text.literal("Aimbot: " + status), false);
             }
-            // 重置平滑因子
             if (!enabled) {
                 currentSmoothFactor = MIN_SMOOTH_FACTOR;
                 lastTarget = null;
+                lockedTarget = null;
+            }
+        }
+
+        // 处理清除目标锁定（mouse5）
+        if (KeyBindings.CLEAR_TARGET.wasPressed()) {
+            lockedTarget = null;
+            if (client.player != null) {
+                client.player.sendMessage(net.minecraft.text.Text.literal("§6已清除目标锁定"), false);
             }
         }
     }
@@ -64,19 +71,17 @@ public class AimbotClient implements ClientModInitializer {
         // 获取目标实体
         Entity target = findTarget(player, client);
         if (target == null) {
-            // 没有目标时逐渐减速
             currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE);
             return;
         }
 
         // 检查目标是否改变
         if (lastTarget != target) {
-            // 目标改变，重置平滑因子
             currentSmoothFactor = MIN_SMOOTH_FACTOR;
             lastTarget = target;
         }
 
-        // 计算目标角度，使用tickDelta实现更精确的预测
+        // 计算目标角度
         float[] targetAngles = calculateAngles(player, target, tickDelta);
         float targetYaw = targetAngles[0];
         float targetPitch = targetAngles[1];
@@ -88,13 +93,10 @@ public class AimbotClient implements ClientModInitializer {
 
         // 根据角度差调整平滑因子
         if (angleDiff > 30.0f) {
-            // 角度差较大时，加速
             currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE);
         } else if (angleDiff > 5.0f) {
-            // 角度差中等时，保持正常速度
             currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE/2);
         } else {
-            // 角度差很小时，减速以实现精确瞄准
             currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE);
         }
 
@@ -114,17 +116,35 @@ public class AimbotClient implements ClientModInitializer {
     }
 
     private Entity findTarget(ClientPlayerEntity player, MinecraftClient client) {
+        // 如果当前有锁定目标，检查锁定目标是否仍然有效
+        if (lockedTarget != null) {
+            if (isValidTarget(lockedTarget, player) &&
+                    player.squaredDistanceTo(lockedTarget) <= MAX_DISTANCE * MAX_DISTANCE &&
+                    canSeeEntity(player, lockedTarget)) {
+                return lockedTarget; // 锁定目标仍然有效，继续锁定
+            } else {
+                lockedTarget = null; // 锁定目标失效，清除锁定
+            }
+        }
+
         // 方法1: 使用十字准星目标
         HitResult hitResult = client.crosshairTarget;
         if (hitResult != null && hitResult.getType() == HitResult.Type.ENTITY) {
             Entity target = ((EntityHitResult) hitResult).getEntity();
             if (isValidTarget(target, player)) {
+                lockedTarget = target; // 锁定新目标
                 return target;
             }
         }
 
-        // 方法2: 查找视线方向最近的实体（基于角度差异）
-        return findDirectionalEntity(player, client);
+        // 方法2: 查找视线方向最近的实体
+        Entity directionalTarget = findDirectionalEntity(player, client);
+        if (directionalTarget != null) {
+            lockedTarget = directionalTarget; // 锁定新目标
+            return directionalTarget;
+        }
+
+        return null;
     }
 
     private Entity findDirectionalEntity(ClientPlayerEntity player, MinecraftClient client) {
@@ -139,15 +159,12 @@ public class AimbotClient implements ClientModInitializer {
             double distance = player.squaredDistanceTo(entity);
             if (distance > MAX_DISTANCE * MAX_DISTANCE) continue;
 
-            // 检查视线是否被阻挡
             if (!canSeeEntity(player, entity)) continue;
 
-            // 计算瞄准该实体所需的角度
             float[] targetAngles = calculateAngles(player, entity, 1.0f);
             float targetYaw = targetAngles[0];
             float targetPitch = targetAngles[1];
 
-            // 计算角度差异
             float yawDiff = Math.abs(interpolateAngle(playerYaw, targetYaw, 1.0f));
             float pitchDiff = Math.abs(interpolateAngle(playerPitch, targetPitch, 1.0f));
             double angleDiff = Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
@@ -166,7 +183,6 @@ public class AimbotClient implements ClientModInitializer {
             return false;
         }
 
-        // 只瞄准敌对生物和玩家
         return entity instanceof MobEntity ||
                 (entity instanceof PlayerEntity);
     }
@@ -175,7 +191,6 @@ public class AimbotClient implements ClientModInitializer {
         Vec3d playerEyes = player.getEyePos();
         Vec3d entityEyes = entity.getEyePos();
 
-        // 简单的视线检测
         return player.getWorld().raycast(new net.minecraft.world.RaycastContext(
                 playerEyes, entityEyes,
                 net.minecraft.world.RaycastContext.ShapeType.COLLIDER,
@@ -186,21 +201,15 @@ public class AimbotClient implements ClientModInitializer {
 
     private float[] calculateAngles(ClientPlayerEntity player, Entity target, float tickDelta) {
         Vec3d playerEyes = player.getEyePos();
-
-        // 获取实体的边界框
         net.minecraft.util.math.Box targetBox = target.getBoundingBox();
-        
-        // 计算边界框上距离玩家眼睛最近的点
-        // 先获取实体在当前tickDelta下的位置
+
         Vec3d targetPos = target.getLerpedPos(tickDelta);
         targetBox = targetBox.offset(targetPos.subtract(target.getPos()));
-        
-        // 计算边界框上距离玩家最近的点
+
         double closestX = Math.max(targetBox.minX, Math.min(playerEyes.x, targetBox.maxX));
         double closestY = Math.max(targetBox.minY, Math.min(playerEyes.y, targetBox.maxY));
         double closestZ = Math.max(targetBox.minZ, Math.min(playerEyes.z, targetBox.maxZ));
-        
-        // 使用最近点而不是中心点来计算角度
+
         double dx = closestX - playerEyes.x;
         double dy = closestY - playerEyes.y;
         double dz = closestZ - playerEyes.z;
@@ -214,7 +223,6 @@ public class AimbotClient implements ClientModInitializer {
     }
 
     private float interpolateAngle(float current, float target, float factor) {
-        // 处理角度环绕（-180到180度）
         float difference = target - current;
         while (difference < -180.0f) difference += 360.0f;
         while (difference > 180.0f) difference -= 360.0f;
@@ -223,7 +231,6 @@ public class AimbotClient implements ClientModInitializer {
     }
 
     private void updatePreviousAngles(ClientPlayerEntity player, float yaw, float pitch) {
-        // 更新prev角度字段
         player.prevYaw = yaw;
         player.prevPitch = pitch;
     }
@@ -246,5 +253,25 @@ public class AimbotClient implements ClientModInitializer {
 
     public static void setSmoothFactor(float factor) {
         baseSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, Math.min(MAX_SMOOTH_FACTOR, factor));
+    }
+
+    // 目标锁定一直启用，不再需要切换方法
+    public static boolean isTargetLockEnabled() {
+        return true;
+    }
+
+    // 获取当前锁定目标
+    public static Entity getLockedTarget() {
+        return lockedTarget;
+    }
+
+    // 手动设置锁定目标
+    public static void setLockedTarget(Entity target) {
+        lockedTarget = target;
+    }
+
+    // 手动清除锁定目标
+    public static void clearLockedTarget() {
+        lockedTarget = null;
     }
 }
