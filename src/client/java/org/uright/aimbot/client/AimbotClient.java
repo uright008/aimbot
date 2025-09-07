@@ -136,12 +136,23 @@ public class AimbotClient implements ClientModInitializer {
     private float[] calculateAngles(ClientPlayerEntity player, Entity target, float tickDelta) {
         Vec3d playerEyes = player.getEyePos();
 
-        // 预测目标位置（考虑tickDelta进行插值）
-        Vec3d targetPos = target.getLerpedPos(tickDelta).add(0, target.getEyeHeight(target.getPose()), 0);
-
-        double dx = targetPos.x - playerEyes.x;
-        double dy = targetPos.y - playerEyes.y;
-        double dz = targetPos.z - playerEyes.z;
+        // 获取实体的边界框
+        net.minecraft.util.math.Box targetBox = target.getBoundingBox();
+        
+        // 计算边界框上距离玩家眼睛最近的点
+        // 先获取实体在当前tickDelta下的位置
+        Vec3d targetPos = target.getLerpedPos(tickDelta);
+        targetBox = targetBox.offset(targetPos.subtract(target.getPos()));
+        
+        // 计算边界框上距离玩家最近的点
+        double closestX = Math.max(targetBox.minX, Math.min(playerEyes.x, targetBox.maxX));
+        double closestY = Math.max(targetBox.minY, Math.min(playerEyes.y, targetBox.maxY));
+        double closestZ = Math.max(targetBox.minZ, Math.min(playerEyes.z, targetBox.maxZ));
+        
+        // 使用最近点而不是中心点来计算角度
+        double dx = closestX - playerEyes.x;
+        double dy = closestY - playerEyes.y;
+        double dz = closestZ - playerEyes.z;
 
         double distanceXZ = Math.sqrt(dx * dx + dz * dz);
 
