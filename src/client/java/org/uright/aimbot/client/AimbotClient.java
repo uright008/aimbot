@@ -24,8 +24,15 @@ public class AimbotClient implements ClientModInitializer {
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
     private static final float ACCELERATION_RATE = 0.005f;
     private static final float DECELERATION_RATE = 0.02f;
+    
+    // 添加反应时间相关常量
+    private static final int TARGET_SWITCH_DELAY_TICKS = 10; // 目标切换反应时间（ticks）
+    private static final int TARGET_FOLLOW_DELAY_TICKS = 5;   // 目标跟随反应时间（ticks）
+    
     private static Entity lastTarget = null;
     private static Entity lockedTarget = null;
+    private static int targetSwitchDelayCounter = 0; // 目标切换延迟计数器
+    private static int targetFollowDelayCounter = 0; // 目标跟随延迟计数器
 
     @Override
     public void onInitializeClient() {
@@ -50,15 +57,27 @@ public class AimbotClient implements ClientModInitializer {
                 currentSmoothFactor = MIN_SMOOTH_FACTOR;
                 lastTarget = null;
                 lockedTarget = null;
+                targetSwitchDelayCounter = 0;
+                targetFollowDelayCounter = 0;
             }
         }
 
         // 处理清除目标锁定（mouse5）
         if (KeyBindings.CLEAR_TARGET.wasPressed()) {
             lockedTarget = null;
+            targetSwitchDelayCounter = 0;
             if (client.player != null) {
                 client.player.sendMessage(net.minecraft.text.Text.literal("§6已清除目标锁定"), false);
             }
+        }
+        
+        // 更新延迟计数器
+        if (targetSwitchDelayCounter > 0) {
+            targetSwitchDelayCounter--;
+        }
+        
+        if (targetFollowDelayCounter > 0) {
+            targetFollowDelayCounter--;
         }
     }
 
@@ -78,8 +97,15 @@ public class AimbotClient implements ClientModInitializer {
 
         // 检查目标是否改变
         if (lastTarget != target) {
+            // 重置目标切换延迟计数器
+            targetSwitchDelayCounter = TARGET_SWITCH_DELAY_TICKS;
             currentSmoothFactor = MIN_SMOOTH_FACTOR;
             lastTarget = target;
+        }
+
+        // 如果目标切换延迟尚未结束，则不执行瞄准
+        if (targetSwitchDelayCounter > 0) {
+            return;
         }
 
         // 计算目标角度
@@ -125,6 +151,8 @@ public class AimbotClient implements ClientModInitializer {
                 return lockedTarget;
             } else {
                 lockedTarget = null;
+                // 当锁定目标丢失时，重置目标跟随延迟
+                targetFollowDelayCounter = TARGET_FOLLOW_DELAY_TICKS;
             }
         }
 
@@ -134,6 +162,8 @@ public class AimbotClient implements ClientModInitializer {
             Entity target = ((EntityHitResult) hitResult).getEntity();
             if (isValidTarget(target, player)) {
                 lockedTarget = target;
+                // 当找到新目标时，重置目标跟随延迟
+                targetFollowDelayCounter = TARGET_FOLLOW_DELAY_TICKS;
                 return target;
             }
         }
@@ -142,7 +172,16 @@ public class AimbotClient implements ClientModInitializer {
         Entity directionalTarget = findDirectionalEntity(player, client);
         if (directionalTarget != null) {
             lockedTarget = directionalTarget;
+            // 当找到新目标时，重置目标跟随延迟
+            targetFollowDelayCounter = TARGET_FOLLOW_DELAY_TICKS;
             return directionalTarget;
+        }
+
+        // 如果目标跟随延迟尚未结束，继续保持之前的瞄准方向
+        if (targetFollowDelayCounter > 0 && lastTarget != null && 
+            isValidTarget(lastTarget, player) && 
+            player.squaredDistanceTo(lastTarget) <= MAX_DISTANCE * MAX_DISTANCE) {
+            return lastTarget;
         }
 
         return null;
@@ -294,5 +333,15 @@ public class AimbotClient implements ClientModInitializer {
     // 获取FOV限制
     public static float getMaxFov() {
         return MAX_FOV;
+    }
+    
+    // 获取目标切换延迟计数器
+    public static int getTargetSwitchDelayCounter() {
+        return targetSwitchDelayCounter;
+    }
+    
+    // 获取目标跟随延迟计数器
+    public static int getTargetFollowDelayCounter() {
+        return targetFollowDelayCounter;
     }
 }
