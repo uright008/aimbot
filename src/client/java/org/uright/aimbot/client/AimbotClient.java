@@ -19,15 +19,15 @@ public class AimbotClient implements ClientModInitializer {
     private static float baseSmoothFactor = 0.07f;
     private static float currentSmoothFactor = 0.01f;
     private static final float MAX_DISTANCE = 10.0f;
-    private static final float MAX_FOV = 30.0f; // FOV限制
+    private static final float MAX_FOV = 80.0f; // FOV限制
     private static final float MIN_SMOOTH_FACTOR = 0.01f;
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
     private static final float ACCELERATION_RATE = 0.005f;
     private static final float DECELERATION_RATE = 0.02f;
     
     // 添加反应时间相关常量
-    private static final int TARGET_SWITCH_DELAY_TICKS = 10; // 目标切换反应时间（ticks）
-    private static final int TARGET_FOLLOW_DELAY_TICKS = 10;   // 目标跟随反应时间（ticks）
+    private static final int TARGET_SWITCH_DELAY_TICKS = 4; // 目标切换反应时间（ticks）
+    private static final int TARGET_FOLLOW_DELAY_TICKS = 3;   // 目标跟随反应时间（ticks）
     private static final int TARGET_MOVEMENT_DELAY_TICKS = 2;   // 目标移动反应时间（ticks）约200ms
     
     // 纵向抖动相关常量
