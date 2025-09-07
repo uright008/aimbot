@@ -15,10 +15,14 @@ import net.minecraft.util.math.Vec3d;
 public class AimbotClient implements ClientModInitializer {
 
     private static boolean enabled = false;
-    private static float smoothFactor = 0.07f;
+    private static float baseSmoothFactor = 0.07f;
+    private static float currentSmoothFactor = 0.01f; // 当前使用的平滑因子
     private static final float MAX_DISTANCE = 10.0f;
     private static final float MIN_SMOOTH_FACTOR = 0.01f;
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
+    private static final float ACCELERATION_RATE = 0.005f; // 加速速率
+    private static final float DECELERATION_RATE = 0.02f; // 减速速率
+    private static Entity lastTarget = null; // 上一个目标
 
     @Override
     public void onInitializeClient() {
@@ -42,6 +46,11 @@ public class AimbotClient implements ClientModInitializer {
                 String status = enabled ? "§a启用" : "§c禁用";
                 client.player.sendMessage(net.minecraft.text.Text.literal("Aimbot: " + status), false);
             }
+            // 重置平滑因子
+            if (!enabled) {
+                currentSmoothFactor = MIN_SMOOTH_FACTOR;
+                lastTarget = null;
+            }
         }
     }
 
@@ -54,16 +63,44 @@ public class AimbotClient implements ClientModInitializer {
 
         // 获取目标实体
         Entity target = findTarget(player, client);
-        if (target == null) return;
+        if (target == null) {
+            // 没有目标时逐渐减速
+            currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE);
+            return;
+        }
+
+        // 检查目标是否改变
+        if (lastTarget != target) {
+            // 目标改变，重置平滑因子
+            currentSmoothFactor = MIN_SMOOTH_FACTOR;
+            lastTarget = target;
+        }
 
         // 计算目标角度，使用tickDelta实现更精确的预测
         float[] targetAngles = calculateAngles(player, target, tickDelta);
         float targetYaw = targetAngles[0];
         float targetPitch = targetAngles[1];
 
+        // 计算当前与目标的角度差
+        float yawDiff = Math.abs(interpolateAngle(player.getYaw(), targetYaw, 1.0f));
+        float pitchDiff = Math.abs(interpolateAngle(player.getPitch(), targetPitch, 1.0f));
+        float angleDiff = (float) Math.sqrt(yawDiff * yawDiff + pitchDiff * pitchDiff);
+
+        // 根据角度差调整平滑因子
+        if (angleDiff > 30.0f) {
+            // 角度差较大时，加速
+            currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE);
+        } else if (angleDiff > 5.0f) {
+            // 角度差中等时，保持正常速度
+            currentSmoothFactor = Math.min(baseSmoothFactor, currentSmoothFactor + ACCELERATION_RATE/2);
+        } else {
+            // 角度差很小时，减速以实现精确瞄准
+            currentSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, currentSmoothFactor - DECELERATION_RATE);
+        }
+
         // 平滑插值
-        float newYaw = interpolateAngle(player.getYaw(), targetYaw, smoothFactor);
-        float newPitch = interpolateAngle(player.getPitch(), targetPitch, smoothFactor);
+        float newYaw = interpolateAngle(player.getYaw(), targetYaw, currentSmoothFactor);
+        float newPitch = interpolateAngle(player.getPitch(), targetPitch, currentSmoothFactor);
 
         // 限制俯仰角在合法范围内
         newPitch = Math.max(-90.0f, Math.min(90.0f, newPitch));
@@ -204,10 +241,10 @@ public class AimbotClient implements ClientModInitializer {
     }
 
     public static float getSmoothFactor() {
-        return smoothFactor;
+        return baseSmoothFactor;
     }
 
     public static void setSmoothFactor(float factor) {
-        smoothFactor = Math.max(MIN_SMOOTH_FACTOR, Math.min(MAX_SMOOTH_FACTOR, factor));
+        baseSmoothFactor = Math.max(MIN_SMOOTH_FACTOR, Math.min(MAX_SMOOTH_FACTOR, factor));
     }
 }
