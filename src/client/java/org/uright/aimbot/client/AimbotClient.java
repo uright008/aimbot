@@ -24,22 +24,14 @@ public class AimbotClient implements ClientModInitializer {
     private static final float MAX_SMOOTH_FACTOR = 1.0f;
     private static final float ACCELERATION_RATE = 0.005f;
     private static final float DECELERATION_RATE = 0.02f;
-    
-    // 添加反应时间相关常量
-    private static final int TARGET_SWITCH_DELAY_TICKS = 4; // 目标切换反应时间（ticks）
-    private static final int TARGET_FOLLOW_DELAY_TICKS = 3;   // 目标跟随反应时间（ticks）
-    private static final int TARGET_MOVEMENT_DELAY_TICKS = 2;   // 目标移动反应时间（ticks）约200ms
-    
+
     // 纵向抖动相关常量
     private static final float VERTICAL_JITTER_AMPLITUDE = 0.1f; // 纵向抖动幅度
     private static final float VERTICAL_JITTER_FREQUENCY = 0.1f; // 纵向抖动频率
     private static final float MIN_ANGLE_FOR_JITTER = 2.0f; // 应用垂直抖动的最小角度差
-    
+
     private static Entity lastTarget = null;
     private static Entity lockedTarget = null;
-    private static int targetSwitchDelayCounter = 0; // 目标切换延迟计数器
-    private static int targetFollowDelayCounter = 0; // 目标跟随延迟计数器
-    private static int targetMovementDelayCounter = 0; // 目标移动延迟计数器
     private static Vec3d lastTargetPos = null; // 上次目标位置
     private static float lastTargetYaw = 0.0f; // 上次目标偏航角
     private static float lastTargetPitch = 0.0f; // 上次目标俯仰角
@@ -68,9 +60,6 @@ public class AimbotClient implements ClientModInitializer {
                 currentSmoothFactor = MIN_SMOOTH_FACTOR;
                 lastTarget = null;
                 lockedTarget = null;
-                targetSwitchDelayCounter = 0;
-                targetFollowDelayCounter = 0;
-                targetMovementDelayCounter = 0;
                 lastTargetPos = null;
                 lastTargetYaw = 0.0f;
                 lastTargetPitch = 0.0f;
@@ -81,23 +70,9 @@ public class AimbotClient implements ClientModInitializer {
         // 处理清除目标锁定（mouse5）
         if (KeyBindings.CLEAR_TARGET.wasPressed()) {
             lockedTarget = null;
-            targetSwitchDelayCounter = 0;
             if (client.player != null) {
                 client.player.sendMessage(net.minecraft.text.Text.literal("§6已清除目标锁定"), false);
             }
-        }
-        
-        // 更新延迟计数器
-        if (targetSwitchDelayCounter > 0) {
-            targetSwitchDelayCounter--;
-        }
-        
-        if (targetFollowDelayCounter > 0) {
-            targetFollowDelayCounter--;
-        }
-        
-        if (targetMovementDelayCounter > 0) {
-            targetMovementDelayCounter--;
         }
     }
 
@@ -118,19 +93,14 @@ public class AimbotClient implements ClientModInitializer {
 
         // 检查目标是否改变
         if (lastTarget != target) {
-            // 重置目标切换延迟计数器
-            targetSwitchDelayCounter = TARGET_SWITCH_DELAY_TICKS;
             currentSmoothFactor = MIN_SMOOTH_FACTOR;
             lastTarget = target;
             lastTargetPos = target.getPos();
-            targetMovementDelayCounter = 0;
             aimTicks = 0; // 重置瞄准计数器
         } else {
             // 检查目标是否移动
             Vec3d currentTargetPos = target.getPos();
             if (lastTargetPos != null && !lastTargetPos.equals(currentTargetPos)) {
-                // 目标移动了，重置移动延迟计数器
-                targetMovementDelayCounter = TARGET_MOVEMENT_DELAY_TICKS;
                 lastTargetPos = currentTargetPos;
                 aimTicks = 0; // 重置瞄准计数器
             }
@@ -138,16 +108,6 @@ public class AimbotClient implements ClientModInitializer {
 
         // 增加瞄准计数器
         aimTicks++;
-
-        // 如果目标切换延迟尚未结束，则不执行瞄准
-        if (targetSwitchDelayCounter > 0) {
-            return;
-        }
-        
-        // 如果目标移动延迟尚未结束，则不执行瞄准
-        if (targetMovementDelayCounter > 0) {
-            return;
-        }
 
         // 计算目标角度
         float[] targetAngles = calculateAngles(player, target, tickDelta);
@@ -182,7 +142,7 @@ public class AimbotClient implements ClientModInitializer {
         // 应用惯性效果 - 基于上次移动和当前目标的差异
         float yawInertia = Math.abs(interpolateAngle(lastTargetYaw, targetYaw, 1.0f));
         float pitchInertia = Math.abs(interpolateAngle(lastTargetPitch, targetPitch, 1.0f));
-        
+
         // 如果目标移动变化大，降低平滑因子以增加惯性
         if (yawInertia > 10.0f || pitchInertia > 10.0f) {
             currentSmoothFactor *= 0.8f; // 减少平滑因子增加惯性
@@ -216,8 +176,6 @@ public class AimbotClient implements ClientModInitializer {
                 return lockedTarget;
             } else {
                 lockedTarget = null;
-                // 当锁定目标丢失时，重置目标跟随延迟
-                targetFollowDelayCounter = TARGET_FOLLOW_DELAY_TICKS;
             }
         }
 
@@ -227,8 +185,6 @@ public class AimbotClient implements ClientModInitializer {
             Entity target = ((EntityHitResult) hitResult).getEntity();
             if (isValidTarget(target, player)) {
                 lockedTarget = target;
-                // 当找到新目标时，重置目标跟随延迟
-                targetFollowDelayCounter = TARGET_FOLLOW_DELAY_TICKS;
                 return target;
             }
         }
@@ -237,16 +193,7 @@ public class AimbotClient implements ClientModInitializer {
         Entity directionalTarget = findDirectionalEntity(player, client);
         if (directionalTarget != null) {
             lockedTarget = directionalTarget;
-            // 当找到新目标时，重置目标跟随延迟
-            targetFollowDelayCounter = TARGET_FOLLOW_DELAY_TICKS;
             return directionalTarget;
-        }
-
-        // 如果目标跟随延迟尚未结束，继续保持之前的瞄准方向
-        if (targetFollowDelayCounter > 0 && lastTarget != null && 
-            isValidTarget(lastTarget, player) && 
-            player.squaredDistanceTo(lastTarget) <= MAX_DISTANCE * MAX_DISTANCE) {
-            return lastTarget;
         }
 
         return null;
@@ -345,7 +292,7 @@ public class AimbotClient implements ClientModInitializer {
 
         return new float[]{yaw, pitch};
     }
-    
+
 
     private float interpolateAngle(float current, float target, float factor) {
         float difference = target - current;
@@ -412,20 +359,4 @@ public class AimbotClient implements ClientModInitializer {
     public static float getMaxFov() {
         return MAX_FOV;
     }
-    
-    // 获取目标切换延迟计数器
-    public static int getTargetSwitchDelayCounter() {
-        return targetSwitchDelayCounter;
-    }
-    
-    // 获取目标跟随延迟计数器
-    public static int getTargetFollowDelayCounter() {
-        return targetFollowDelayCounter;
-    }
-    
-    // 获取目标移动延迟计数器
-    public static int getTargetMovementDelayCounter() {
-        return targetMovementDelayCounter;
-    }
-    
 }
