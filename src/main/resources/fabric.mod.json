@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "id": "aimbot",
+  "version": "${version}",
+  "name": "Aimbot",
+  "description": "A smooth aimbot mod for Minecraft",
+  "authors": [
+    "URight"
+  ],
+  "contact": {
+    "homepage": "https://github.com/uright/aimbot",
+    "sources": "https://github.com/uright/aimbot"
+  },
+  "license": "MIT",
+  "icon": "assets/aimbot/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "org.uright.aimbot.client.AimbotClient"
+    ],
+    "main": [
+      "org.uright.aimbot.Aimbot"
+    ]
+  },
+  "mixins": [
+    "aimbot.mixins.json",
+    {
+      "config": "aimbot.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
