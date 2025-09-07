@@ -15,6 +15,7 @@ import net.minecraft.util.math.Vec3d;
 public class AimbotClient implements ClientModInitializer {
 
     private static boolean enabled = false;
+    private static boolean paused = false;
     private static final boolean targetLockEnabled = true;
     private static float baseSmoothFactor = 0.07f;
     private static float currentSmoothFactor = 0.01f;
@@ -67,7 +68,14 @@ public class AimbotClient implements ClientModInitializer {
             }
         }
 
-        // 处理清除目标锁定（mouse5）
+        // 处理暂停/恢复瞄准 (按住时暂停)
+        if (KeyBindings.CLEAR_TARGET.isPressed()) {
+            paused = true;
+        } else {
+            paused = false;
+        }
+
+        // 处理清除目标锁定（按下时）
         if (KeyBindings.CLEAR_TARGET.wasPressed()) {
             lockedTarget = null;
             if (client.player != null) {
@@ -77,7 +85,8 @@ public class AimbotClient implements ClientModInitializer {
     }
 
     private void onRender(net.minecraft.client.gui.DrawContext context, float tickDelta) {
-        if (!enabled) return;
+        // 如果未启用或已暂停，则不执行瞄准逻辑
+        if (!enabled || paused) return;
 
         MinecraftClient client = MinecraftClient.getInstance();
         ClientPlayerEntity player = client.player;
